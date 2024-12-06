@@ -14,7 +14,7 @@ pub enum Error {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ButtonEvent {
     None = 0x00,
     Press = 0x01,
@@ -44,7 +44,7 @@ impl std::convert::TryFrom<u8> for ButtonEvent {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum DimmerEvent {
     None = 0x00,
     RotateLeft = 0x01,
@@ -175,7 +175,7 @@ macro_rules! bthome_objects {
 
 bthome_objects! {
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ObjectId {
     /* Sensor data */
     /// Unit: m/s² type: uint16 factor: 0.001
@@ -325,7 +325,7 @@ pub enum ObjectId {
 }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ObjectValue {
     Float(f32),
     Int(i64),
@@ -336,13 +336,23 @@ pub enum ObjectValue {
     Text(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Object {
     pub object_id: ObjectId,
     pub value: ObjectValue,
 }
 
-#[derive(Debug)]
+impl Object {
+
+    fn read(data: &mut impl Read) -> Result<Object, Error> {
+        let mut next_byte = [0u8];
+        data.read_exact(&mut next_byte)?;
+        let object_id = ObjectId::try_from(next_byte[0])?;
+        value_from_raw(object_id, data)
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct ServiceData {
     pub encrypted: bool,
     pub trigger_based: bool,
@@ -367,18 +377,48 @@ pub fn parse_service_data(data: &[u8]) -> Result<ServiceData, Error> {
         objects: Vec::new(),
     };
     loop {
-        let mut next_byte = [0u8];
-        if let Err(err) = cursor.read_exact(&mut next_byte) {
-            if err.kind() == std::io::ErrorKind::UnexpectedEof {
-                break;
-            } else {
-                return Err(Error::IoError(err));
-            }
-        }
-        let object_id = ObjectId::try_from(next_byte[0])?;
+        let obj = match Object::read(&mut cursor) {
+            Ok(o) => o,
+            Err(Error::IoError(err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(e),
+        };
         service_data
             .objects
-            .push(value_from_raw(object_id, &mut cursor)?);
+            .push(obj);
     }
     Ok(service_data)
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn parse_example() {
+        let example: [u8; 7] = [0x40, 0x02, 0xC4, 0x09, 0x03, 0xBF, 0x13];
+        let parsed = parse_service_data(&example).expect("Example to parse successfully");
+        assert_eq!(parsed, ServiceData {
+            encrypted: false,
+            trigger_based: false,
+            version: 2,
+            objects: vec![ 
+                Object { object_id: ObjectId::Temperature4, value: ObjectValue::Float(25.0) },
+                Object { object_id: ObjectId::HumidityU16, value: ObjectValue::Float(50.55) }
+            ]
+        })
+    }
+
+    #[test]
+    fn parse_objects() {
+        let examples = vec![
+            (vec![ 0x51, 0x87, 0x56], Object { object_id: ObjectId::Acceleration, value: ObjectValue::Float(22.151001) }),
+            (vec![0x01, 0x61], Object { object_id: ObjectId::Battery, value: ObjectValue::Int(97) })
+        ];
+        for (data, expected) in examples.iter() {
+            let mut reader = Cursor::new(data);
+            let parsed = Object::read(&mut reader).expect("Example to parse successfully");
+            assert_eq!(&parsed, expected)
+        }
+    }
 }
