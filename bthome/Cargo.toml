@@ -1,0 +1,7 @@
+[package]
+name = "bthome"
+version = "0.1.0"
+edition = "2021"
+authors = ["Felix Konstantin Maurer <maufl@maufl.de"]
+
+[dependencies]

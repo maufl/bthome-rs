@@ -1,0 +1,11 @@
+[package]
+name = "bthome-sniffer"
+version = "0.1.0"
+edition = "2021"
+authors = ["Felix Konstantin Maurer <maufl@maufl.de"]
+
+[dependencies]
+tokio = { version = "1", features = ["rt", "net", "io-util"] }
+futures = "0.3"
+bluer = { version = "0.17.3", features = ["bluetoothd"] }
+bthome = { path = "../bthome" }
