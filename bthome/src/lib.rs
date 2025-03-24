@@ -8,6 +8,7 @@ pub const BTHOME_UUID: u128 = 0x0000FCD2_0000_1000_8000_00805F9B34FB;
 pub enum Error {
     IoError(std::io::Error),
     InvalidTextEncoding,
+    Encrypted,
     InvalidObjectId(u8),
     InvalidButtonEvent(u8),
     InvalidDimmerEvent(u8),
@@ -376,6 +377,9 @@ pub fn parse_service_data(data: &[u8]) -> Result<ServiceData, Error> {
         version: head[0] >> 5,
         objects: Vec::new(),
     };
+    if service_data.encrypted {
+        return Err(Error::Encrypted);
+    }
     loop {
         let obj = match Object::read(&mut cursor) {
             Ok(o) => o,
